@@ -1,7 +1,7 @@
 using Microsoft.EntityFrameworkCore;
-//using WebStore.Entities;
+using WebStore.Entities;
 
-namespace WebStore.Assignments
+namespace WebStore
 {
     /// Additional tutorial materials https://dotnettutorials.net/lesson/linq-to-entities-in-entity-framework-core/
 
@@ -21,39 +21,22 @@ namespace WebStore.Assignments
     /// </summary>
     public class LinqQueriesAssignment
     {
-
-        /* TODO: Uncomment this code after generating the entity models
-
         private readonly WebStoreContext _dbContext;
 
-        public LinqQueriesAssignment(WebStoreContext context)
+        public LinqQueriesAssignment(WebStoreContext dbContext)
         {
-            _dbContext = context;
+            _dbContext = dbContext;
         }
-
 
         /// <summary>
         /// 1. List all customers in the database:
         ///    - Print each customer's full name (First + Last) and Email.
         /// </summary>
-        public async Task Task01_ListAllCustomers()
+        public IEnumerable<Customer> GetAllCustomers()
         {
-            // TODO: Write a LINQ query that fetches all customers
-            //       and prints their names + emails to the console.
-            // HINT: context.Customers
-            
-            var customers = await _dbContext.Customers
-               // .AsNoTracking() // optional for read-only
-               .ToListAsync();
-
-            Console.WriteLine("=== TASK 01: List All Customers ===");
-
-            foreach (var c in customers)
-            {
-                Console.WriteLine($"{c.FirstName} {c.LastName} - {c.Email}");
-            }
-
-            
+            return _dbContext.Customers
+                .Include(c => c.Orders)
+                .ToList();
         }
 
         /// <summary>
@@ -63,30 +46,26 @@ namespace WebStore.Assignments
         ///    - Order Status
         ///    - Number of items in each order (the sum of OrderItems.Quantity)
         /// </summary>
-        public async Task Task02_ListOrdersWithItemCount()
+        public IEnumerable<Order> GetCustomerOrders(int customerId)
         {
-            // TODO: Write a query to return all orders,
-            //       along with the associated customer name, order status,
-            //       and the total quantity of items in that order.
-
-            // HINT: Use Include/ThenInclude or projection with .Select(...).
-            //       Summing the quantities: order.OrderItems.Sum(oi => oi.Quantity).
-
-            Console.WriteLine(" ");
-            Console.WriteLine("=== TASK 02: List Orders With Item Count ===");
+            return _dbContext.Orders
+                .Include(o => o.OrderItems)
+                .ThenInclude(oi => oi.Product)
+                .Where(o => o.CustomerId == customerId)
+                .ToList();
         }
 
         /// <summary>
         /// 3. List all products (ProductName, Price),
         ///    sorted by price descending (highest first).
         /// </summary>
-        public async Task Task03_ListProductsByDescendingPrice()
+        public IEnumerable<Product> GetProductsByCategory(int categoryId)
         {
-            // TODO: Write a query to fetch all products and sort them
-            //       by descending price.
-            // HINT: context.Products.OrderByDescending(p => p.Price)
-            Console.WriteLine(" ");
-            Console.WriteLine("=== Task 03: List Products By Descending Price ===");
+            return _dbContext.ProductCategories
+                .Include(pc => pc.Product)
+                .Where(pc => pc.CategoryId == categoryId)
+                .Select(pc => pc.Product)
+                .ToList();
         }
 
         /// <summary>
@@ -97,14 +76,14 @@ namespace WebStore.Assignments
         ///      - Order Date
         ///      - Total price (sum of unit_price * quantity - discount) for each order
         /// </summary>
-        public async Task Task04_ListPendingOrdersWithTotalPrice()
+        public IEnumerable<Order> GetOrdersByStatus(string status)
         {
-            // TODO: Write a query to fetch only PENDING orders,
-            //       and calculate their total price.
-            // HINT: The total can be computed from each OrderItem:
-            //       (oi.UnitPrice * oi.Quantity) - oi.Discount
-            Console.WriteLine(" ");
-            Console.WriteLine("=== Task 04: List Pending Orders With Total Price ===");
+            return _dbContext.Orders
+                .Include(o => o.Customer)
+                .Include(o => o.OrderItems)
+                .ThenInclude(oi => oi.Product)
+                .Where(o => o.OrderStatus == status)
+                .ToList();
         }
 
         /// <summary>
@@ -113,17 +92,18 @@ namespace WebStore.Assignments
         ///      - Customer Full Name
         ///      - Number of Orders
         /// </summary>
-        public async Task Task05_OrderCountPerCustomer()
+        public IEnumerable<object> GetStockQuantities()
         {
-            // TODO: Write a query that groups by Customer,
-            //       counting the number of orders each has.
-
-            // HINT: 
-            //  1) Join Orders and Customers, or
-            //  2) Use the navigation (context.Orders or context.Customers),
-            //     then group by customer ID or by the customer entity.
-            Console.WriteLine(" ");
-            Console.WriteLine("=== Task 05: Order Count Per Customer ===");
+            return _dbContext.Stocks
+                .Include(s => s.Store)
+                .Include(s => s.Product)
+                .GroupBy(s => s.Store.StoreName)
+                .Select(g => new
+                {
+                    StoreName = g.Key,
+                    TotalQuantity = g.Sum(s => s.QuantityInStock)
+                })
+                .ToList();
         }
 
         /// <summary>
@@ -131,32 +111,26 @@ namespace WebStore.Assignments
         ///    - For each customer, calculate SUM of (OrderItems * Price).
         ///      Then pick the top 3.
         /// </summary>
-        public async Task Task06_Top3CustomersByOrderValue()
+        public IEnumerable<Customer> GetCustomersWithOrdersInPeriod(DateTime startDate, DateTime endDate)
         {
-            // TODO: Calculate each customer's total order value 
-            //       using their Orders -> OrderItems -> (UnitPrice * Quantity - Discount).
-            //       Sort descending and take top 3.
-
-            // HINT: You can do this in a single query or multiple steps.
-            //       One approach:
-            //         1) Summarize each Order's total
-            //         2) Summarize for each Customer
-            //         3) Order by descending total
-            //         4) Take(3)
-            Console.WriteLine(" ");
-            Console.WriteLine("=== Task 06: Top 3 Customers By Order Value ===");
+            return _dbContext.Orders
+                .Include(o => o.Customer)
+                .Where(o => o.OrderDate >= startDate && o.OrderDate <= endDate)
+                .Select(o => o.Customer)
+                .Distinct()
+                .ToList();
         }
 
         /// <summary>
         /// 7. Show all orders placed in the last 30 days (relative to now).
         ///    - Display order ID, date, and customer name.
         /// </summary>
-        public async Task Task07_RecentOrders()
+        public IEnumerable<Product> GetTopExpensiveProducts(int count = 5)
         {
-            // TODO: Filter orders to only those with OrderDate >= (DateTime.Now - 30 days).
-            //       Output ID, date, and the customer's name.
-            Console.WriteLine(" ");
-            Console.WriteLine("=== Task 07: Recent Orders ===");
+            return _dbContext.Products
+                .OrderByDescending(p => p.Price)
+                .Take(count)
+                .ToList();
         }
 
         /// <summary>
@@ -165,24 +139,33 @@ namespace WebStore.Assignments
         ///    - Product name, total sold quantity.
         ///    - Sort by total sold descending.
         /// </summary>
-        public async Task Task08_TotalSoldPerProduct()
+        public IEnumerable<object> GetCustomerOrderTotals()
         {
-            // TODO: Group or join OrdersItems by Product.
-            //       Summation of quantity.
-            Console.WriteLine(" ");
-            Console.WriteLine("=== Task 08: Total Sold Per Product ===");
+            return _dbContext.Orders
+                .Include(o => o.Customer)
+                .Include(o => o.OrderItems)
+                .GroupBy(o => new { o.CustomerId, o.Customer.FirstName, o.Customer.LastName })
+                .Select(g => new
+                {
+                    CustomerName = $"{g.Key.FirstName} {g.Key.LastName}",
+                    TotalAmount = g.Sum(o => o.OrderItems.Sum(oi => oi.Quantity * oi.UnitPrice))
+                })
+                .OrderByDescending(x => x.TotalAmount)
+                .ToList();
         }
 
         /// <summary>
         /// 9. List any orders that have at least one OrderItem with a Discount > 0.
         ///    - Show Order ID, Customer name, and which products were discounted.
         /// </summary>
-        public async Task Task09_DiscountedOrders()
+        public IEnumerable<Order> GetDiscountedOrders()
         {
-            // TODO: Identify orders with any OrderItem having (Discount > 0).
-            //       Display order details, plus the discounted products.
-            Console.WriteLine(" ");
-            Console.WriteLine("=== Task 09: Discounted Orders ===");
+            return _dbContext.Orders
+                .Include(o => o.Customer)
+                .Include(o => o.OrderItems)
+                .ThenInclude(oi => oi.Product)
+                .Where(o => o.OrderItems.Any(oi => oi.Discount > 0))
+                .ToList();
         }
 
         /// <summary>
@@ -193,25 +176,32 @@ namespace WebStore.Assignments
         ///       is stocked most. (Requires `Stocks`, `Store`, `ProductCategory`, etc.)
         ///     - Or any custom scenario that spans multiple tables.
         /// </summary>
-        public async Task Task10_AdvancedQueryExample()
+        public IEnumerable<object> GetOrdersWithCategoryProducts(string categoryName)
         {
-            // TODO: Design your own complex query that demonstrates
-            //       multiple joins or navigation paths. For example:
-            //       - Orders that contain any product from "Electronics" category.
-            //       - Then, find which store has the highest stock of that product.
-            //       - Print results.
-
-            // Here's an outline you could explore:
-            // 1) Filter products by category name "Electronics"
-            // 2) Find any orders that contain these products
-            // 3) For each of those products, find the store with the max stock
-            //    (requires .MaxBy(...) in .NET 6+ or custom code in older versions)
-            // 4) Print a combined result
-
-            // (Implementation is left as an exercise.)
-            Console.WriteLine(" ");
-            Console.WriteLine("=== Task 10: Advanced Query Example ===");
+            return _dbContext.Orders
+                .Include(o => o.Customer)
+                .Include(o => o.OrderItems)
+                .ThenInclude(oi => oi.Product)
+                .ThenInclude(p => p.ProductCategories)
+                .ThenInclude(pc => pc.Category)
+                .Where(o => o.OrderItems.Any(oi => 
+                    oi.Product.ProductCategories.Any(pc => 
+                        pc.Category.CategoryName == categoryName)))
+                .Select(o => new
+                {
+                    OrderId = o.OrderId,
+                    CustomerName = $"{o.Customer.FirstName} {o.Customer.LastName}",
+                    Products = o.OrderItems
+                        .Where(oi => oi.Product.ProductCategories
+                            .Any(pc => pc.Category.CategoryName == categoryName))
+                        .Select(oi => new
+                        {
+                            ProductName = oi.Product.ProductName,
+                            Quantity = oi.Quantity,
+                            Price = oi.UnitPrice
+                        })
+                })
+                .ToList();
         }
-        */
     }
 }
